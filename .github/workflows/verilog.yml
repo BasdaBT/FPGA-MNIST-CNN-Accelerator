@@ -1,0 +1,49 @@
+name: Verilog CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  elaborate-and-smoke-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install Icarus Verilog
+        run: sudo apt-get update && sudo apt-get install --yes iverilog
+
+      - name: Elaborate testbench and Basys 3 top
+        run: |
+          mkdir -p build
+          iverilog -g2012 -Wall -s tb_cnn_top -o build/cnn_tb.vvp rtl/*.v tb/tb_cnn_top.v
+          iverilog -g2012 -Wall -s basys3_cnn_demo -o build/basys3_cnn_demo.vvp rtl/*.v
+
+      - name: Create deterministic smoke-test memories
+        run: |
+          python3 - <<'PY'
+          files = {
+              "test_image_8_label_5_hex.txt": 784,
+              "conv1_weights_hex.txt": 36,
+              "conv1_bias_hex.txt": 4,
+              "dense1_weights_hex.txt": 21632,
+              "dense1_bias_hex.txt": 32,
+              "dense2_weights_hex.txt": 1024,
+              "dense2_bias_hex.txt": 32,
+              "output_weights_hex.txt": 320,
+              "output_bias_hex.txt": 10,
+          }
+          for filename, count in files.items():
+              with open(filename, "w", encoding="ascii") as stream:
+                  stream.write("00\n" * count)
+          PY
+
+      - name: Run two-inference control-flow smoke test
+        run: vvp build/cnn_tb.vvp
